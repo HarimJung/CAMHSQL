@@ -1,0 +1,24 @@
+SELECT
+    [MRN],
+    [ClientEncounter] AS 'EncounterNumber',
+    [Unit/Location] AS 'Location',
+    [Unit/Location] AS 'LocationCopied',
+    [DateTime],
+    [TypeofActivity],
+    [TypeofActivityExcludingEDH],
+    [CensusSecondsOnUnit] AS 'UnitLOSSeconds',
+    ROUND([CensusSecondsOnUnit] / CONVERT(FLOAT, 60 * 60), 1) AS 'UnitLOSHrs'
+FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] p
+LEFT JOIN (
+    SELECT
+        DISTINCT Building,
+        ReportableLocation,
+        ReportableLocDesc,
+        MajorProgram,
+        MajorDivision,
+        CASE SubProgram WHEN 'ED & InPatient Services' THEN 'ED & Inpatient Services' ELSE SubProgram END AS SubProgram
+    FROM CAMHBI_DW_CERNER.dsh.v_DIM_Location_AU_Program
+    WHERE (ReportableLocation IS NOT NULL AND SubProgram IS NOT NULL AND (ActiveInd = 1 OR Location = 'CMUD'))
+        OR ReportableLocation IN ('CHPD', 'AIM', 'FACT', 'CTDA', 'OPPH', 'FEPC', 'DETB', 'DENT', 'BIU', 'MAEI', 'CHBB', 'MAU', 'CHAR')
+) LOC ON p.[Unit/Location] = LOC.ReportableLocation
+WHERE p.[Unit/Location] NOT IN ('EDH', 'LOA', 'AWOL')
