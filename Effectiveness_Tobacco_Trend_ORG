@@ -1,0 +1,65 @@
+DECLARE @eop datetime, @level int
+SET @eop = $enddate$
+SET @level = $level$ 
+
+SELECT       
+             d.ClientEncounter, 
+			 d.[Unit/Location] AS Location,
+			 d.[Unit/Location] AS Location_for_div,	
+			 d.[datetime] as admitdate,
+             isnull(n.ncount,0) as Tobacco_Numerator ,
+             isnull(d.dcount,0) as Tobacco_Denominator
+
+FROM 
+(
+		SELECT ClientEncounter,[Unit/Location],[DATEtime],1 as Dcount
+         FROM 
+		 (
+			SELECT ClientEncounter,[Unit/Location] ,[DATEtime]
+			FROM ra.v_DataCutPatientHours
+			WHERE TypeofActivity='a' 
+			 AND [Unit/Location] NOT IN ('EAU','EDH','AWOL','LOA')
+		 )NonEDHEAU
+
+         UNION 
+		
+		SELECT ClientEncounter,[Unit/Location],[DATEtime], 1 as Dcount
+        FROM 
+		(
+			select A.* from 
+			(
+				SELECT *,ROW_NUMBER() OVER (PARTITION BY CLIENTENCOUNTER  order by [dateTIME]) as RW 
+				FROM ra.v_DataCutPatientHours 
+				WHERE ClientEncounter  IN ( SELECT DISTINCT ClientEncounter   
+											 FROM ra.v_DataCutPatientHours A 
+											 WHERE TypeofActivity='a' 
+											  AND [Unit/Location]  IN ('EAU','EDH','AWOL','LOA')
+										  )
+				AND [Unit/Location] NOT IN ('EAU','EDH','AWOL','LOA') 
+			) a  WHERE A.RW=1
+		) 
+		EDHEAU
+)d
+left outer join ra.v_DIM_Location_AU_Program loc on loc.Location=d.[Unit/Location]
+left outer JOIN 
+	(	
+		SELECT EncounterNumber,MIN(FORM_DT_TM) AS FORMTIME,1 as Ncount
+		FROM RA.v_DCTobaccoUseScrn
+		WHERE FORM_STATUS IN ('Auth (Verified)','Modified')
+		GROUP BY ENCOUNTERNUMBER
+	)n ON d.CLIENTENCOUNTER=n.ENCOUNTERNUMBER AND  DATEDIFF(second, d.[DATETIME], n.FORMTIME) <= 86400
+WHERE 
+	(
+		@level = 0 and d.[datetime] BETWEEN DATEADD(year, -10, DATEADD(month, 
+                                                                                case datepart(month, @eop) % 3
+                                                                                when 1 then 3
+                                                                                when 2 then 2
+                                                                                when 0 then 1
+                                                                                end, @eop)) and  @eop
+    )
+	or 
+	(
+		@level = 1 and d.[datetime] BETWEEN DATEADD(year, -1, @eop) and @eop 
+	)
+-- d.[datetime] >= dateadd(mm,-12,$enddate$)
+-- and  d.[datetime] < $enddate$ 
