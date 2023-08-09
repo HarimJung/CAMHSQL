@@ -31,11 +31,17 @@ there's a case where the patient's [Discharge Date] is null (they are still admi
 >The final result for each patient's [MRN] is 1 if this condition is met for any instance, and 0 otherwise. This could be used, for example, to flag patients who have been in the hospital for at least a year and are still not discharged. So after we count of the each MRN which has a value of 1, it is the answer of Longstay
 
 
+
+
         
 **Dundas BI**
+
+
 <img width="735" alt="DD_Inpatient Dashboard_ACCESS+ 22_09_AcuteCare" src="https://github.com/HarimJung/CAMHSQL/assets/48680125/ca850970-f322-44df-b6d6-c08faef73180">
 
 **Tableau IPD**
+
+
 ![Inpatient Dashboard_ACCESS+ 22_09_AcuteCare](https://github.com/HarimJung/CAMHSQL/assets/48680125/a75d683e-4cc4-42b1-87c0-8804038507c4)
 
 Some case, numbers are matched, though some cases, it is unmatched. case of "Sep 2022" with "Acute Care" location filtered dashboard,
