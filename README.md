@@ -13,6 +13,7 @@ Within Tableau Prep and Tableau, we handled Transfer To Institution (TTI) and Tr
 
 
 **<Long IPLOS Days_2>**
+
 IF ISNULL ([Discharge Date])  THEN
     ROUND(DATEDIFF('minute', [Date], TODAY()) / (60*24), 1)
 ELSE
@@ -21,6 +22,7 @@ END
 > Based on the code, if the "Discharge Date" is null then we need to calculate how many days this MRN fixed data was in charge in hospital.
 
 **<Long_LongStayTF>**
+
 { FIXED [MRN] : MAX(IIF (isnull([Discharge Date])  AND [Long IPLOS Days_2] >= 365, 1, 0)) }
 
 >So, in plain terms, the code calculates whether, for each patient identified by their [MRN], 
