@@ -26,4 +26,4 @@ END
 >So, in plain terms, the code calculates whether, for each patient identified by their [MRN], 
 there's a case where the patient's [Discharge Date] is null (they are still admitted) and their length of stay ([Long IPLOS Days_2]) is at least 365 days. 
 
-?The final result for each patient's [MRN] is 1 if this condition is met for any instance, and 0 otherwise. This could be used, for example, to flag patients who have been in the hospital for at least a year and are still not discharged. So after we count of the each MRN which has a value of 1, it is the answer of Longstay
+>The final result for each patient's [MRN] is 1 if this condition is met for any instance, and 0 otherwise. This could be used, for example, to flag patients who have been in the hospital for at least a year and are still not discharged. So after we count of the each MRN which has a value of 1, it is the answer of Longstay
