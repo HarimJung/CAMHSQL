@@ -6,9 +6,9 @@ _**Primarily concerning the Access dataset:**_
 1. In contrast to Dundas BI, there are distinctions in the Transfer In and Transfer Out aspects.
 Within Tableau Prep and Tableau, we handled Transfer To Institution (TTI) and Transfer To Other (TTO) as distinct entities.
 
-2. there exist minor disparities in the Discharge and ADMN data when compared with Dundas BI.
+2. there exist minor disparities in the **Discharge** and **ADMN** data when compared with Dundas BI.
 
-3. The LongStay Calculation necessitates a reevaluation, first with Keyrus and subsequently with CAMH.
+3. The LongStay Calculation necessitates a re-evaluation, first with Keyrus and subsequently with CAMH.
 
 
 
