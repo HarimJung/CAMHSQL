@@ -5,7 +5,8 @@ SELECT
     d.EncounterSubType,
     d.ARRIVE_DT_TM AS 'ArriveDate',
     ISNULL(d.AdmitDateTime, d.ARRIVE_DT_TM) AS 'AdmitDate',
-    ISNULL(d.AdmitLoc, d.LastLocation) AS 'AdmitLocation',
+    ISNULL(d.AdmitLoc, d.LastLocation) AS 'AdmitLocation', 
+> AdmitLocation->Location
     d.LastLocation,
     d.LastLocation AS 'LastLocationCopied',
     d.DischargeDate,
