@@ -1,0 +1,151 @@
+# ALC
+
+declare @sop datetime, @eop datetime
+set @sop = $dtstart$
+set @eop = $dtend$
+
+--get all patient days during the period
+;with ph_temp1 as (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+																			, case	when a.TypeofActivity = 'A' then 1
+																					when a.TypeofActivity = 'TTO' then 2
+																					when a.TypeofActivity = 'Y' then 3
+																					when a.TypeofActivity = 'TTI' then 4
+																					when a.TypeofActivity = 'D' then 5
+																					else 6
+																			  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+																						, case	when a.TypeofActivity = 'A' then 1
+																								when a.TypeofActivity = 'TTO' then 2
+																								when a.TypeofActivity = 'Y' then 3
+																								when a.TypeofActivity = 'TTI' then 4
+																								when a.TypeofActivity = 'D' then 5
+																								else 6
+																						  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] WHERE DATE BETWEEN @sop AND @eop) b on a.ClientEncounter = b.ClientEncounter
+)
+, ph_temp2 as (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY	RowRk) AS LocRk
+FROM	ph_temp1 a
+WHERE	TypeofActivity = 'TTI' OR TypeofActivity = 'A'
+)
+, ph_temp3 as (
+SELECT	a.*, COALESCE(b.RowRk - 1, 99999999) as MaxRowRk
+FROM	ph_temp2 a
+		left join ph_temp2 b on a.ClientEncounter = b.ClientEncounter and a.LocRk = b.LocRk-1
+)
+, ph as (
+SELECT	a.ClientEncounter, a.MRN, CASE a.[Unit/Location] WHEN 'LOA' THEN b.LastLocation WHEN 'AWOL' THEN b.LastLocation ELSE a.[Unit/Location] END AS [Unit/Location]
+		, a.LocationDescription, a.Metric, a.DATE, a.Time, a.DateTime, a.TypeofActivity, a.CensusSecondsOnUnit
+		, a.DischargedOnAdmitDay, a.TypeofActivityExcludingEDH, a.EDHToInpatientSameDayTransfer
+FROM	ph_temp1 a
+		left join ph_temp3 b on	a.ClientEncounter = b.ClientEncounter
+								and a.RowRk >= b.RowRk
+								and a.RowRk <= b.MaxRowRk
+)
+, p as (
+SELECT		[MRN]
+			,[ClientEncounter]
+			,[Unit/Location] as 'Location'
+			,[Date]
+			,ROW_NUMBER() OVER (PARTITION BY MRN, ClientEncounter, [Date] ORDER BY sum([CensusSecondsOnUnit]) DESC) AS RN
+FROM		ph
+where		[Unit/Location] not in ('ED', 'EDH')
+			and TypeofActivity <> 'D' --discharge date is excluded from patient days count
+			and DateTime between @sop and @eop
+group by	MRN
+			,ClientEncounter
+			,[Unit/Location]
+			,[Date]
+)
+--get the location where the client spent the most time each day to be assigned as the ALC location
+, pd as (
+select	* 
+		,1 as 'PatientDays'
+from	p as p1
+where	RN = 1
+)
+--get ALC days during the period
+, alc as (
+SELECT		*
+FROM		(	SELECT	a.MRN
+						, a.EncounterNumber
+						, a.[ALC_Designation_Date]
+						, d.DischargeDate
+						, isnull(c2.ALCStartDate,@sop) as 'ALCStartDate'
+						, isnull(c1.ALCEndDate,@eop) as 'ALCEndDate'
+						, datediff(hour, isnull(c2.ALCStartDate,@sop), isnull(c1.ALCEndDate,@eop))/convert(float,24) as 'ALCDaysPeriod'
+						, ROW_NUMBER() OVER (PARTITION BY a.EncounterNumber, CONVERT(DATE, a.ALC_Designation_Date)  ORDER BY CASE WHEN a.Discontinue_DateTime IS NOT NULL THEN 1 ELSE 2 END) AS RN
+				FROM	[CAMHBI_DW_DC].[RA].[v_DatacutsALC] a
+						join [CAMHBI_DW_DC].[RA].[v_DataCutPatientDemographic] d on d.EncounterNumber = a.EncounterNumber and (a.ALC_Designation_Date >= d.AdmitDateTime OR d.AdmitDateTime IS NULL)
+						--get the earliest ALC end date (as a date so that the day of ALC end is not counted)
+						CROSS APPLY (SELECT MIN(convert(date,m)) as ALCEndDate FROM (VALUES (dateadd(day, -1, a.[Discontinue_DateTime])), (dateadd(day, -1, a.[Soft_Stop_DateTime])), (d.DischargeDate), (@eop)) AS c1(m)) c1
+						--get the latest ALC start date which is either the designation date or the period start
+						CROSS APPLY (SELECT MAX(convert(date,n)) as ALCStartDate FROM (VALUES (a.[ALC_Designation_Date]), (@sop)) AS c2(n)) c2
+				WHERE	ALC = 'Alternate Level of Care'
+						and [Void_Date_DateTime] is null
+						and [CAMH_ALC_Discontinue_Reason] <> 'Data Entry Error'
+						) A
+WHERE		RN = 1
+			and [ALCStartDate] < @eop
+			and [ALCEndDate] >= @sop
+)
+, loa as (
+select	MRN
+		, ClientEncounter
+		, [Unit/Location]
+		, [DateTime] as 'LOAStart'
+		, [TypeofActivity]
+		, LEAD ([DateTime],1) OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY [DateTime]
+		, case	when TypeofActivity = 'A' then 1
+				when TypeofActivity = 'TTO' then 2
+				when TypeofActivity = 'Y' then 3
+				when TypeofActivity = 'TTI' then 4
+				when TypeofActivity = 'D' then 5
+				else 6
+		  end) AS 'LOAEnd'
+from	ph
+where	[Unit/Location] in ('AWOL', 'LOA')
+		and [TypeofActivity] in ('TTO', 'TTI')
+)
+--if the last location was leave (e.g. the client went from LOA to AWOL) then get the location before that
+--if the LOA has no end date then use the discharge date
+, l as (
+select	loa.MRN
+		, loa.ClientEncounter
+		, loa.[Unit/Location] as 'OrigLocation'
+		, case	when loa.[Unit/Location] in ('AWOL', 'LOA') then LAG (loa.[Unit/Location],1) OVER (PARTITION BY loa.[MRN], loa.[ClientEncounter] ORDER BY loa.LOAStart, loa.LOAEnd)
+				else loa.[Unit/Location]
+		  end as 'ALCLocation'
+		, loa.LOAStart
+		, case when loa.LOAEnd is null then ph.[DateTime] else loa.LOAEnd end as 'LOAEnd'
+from	loa
+		left join ph on ph.ClientEncounter = loa.ClientEncounter and ph.TypeOfActivity = 'D'
+where	loa.TypeofActivity = 'TTI'
+)
+--join patient days data with the ALC and LOA data 
+, j as (
+select	pd.mrn
+		, pd.clientencounter
+		, pd.[Location]
+		, pd.Date
+		, pd.PatientDays
+		, alc.ALCStartDate
+		, alc.ALCEndDate
+		, case when pd.Date between alc.ALCStartDate and alc.ALCEndDate then pd.PatientDays else 0 end as 'ALCDays'
+		, case when Location in ('AWOL', 'LOA') then l.ALCLocation else pd.Location end as 'ALCLocation'
+		, case when Location in ('AWOL', 'LOA') then l.ALCLocation else pd.Location end as 'ALCLocationCopied'
+from	pd
+		left join alc on pd.ClientEncounter = alc.EncounterNumber
+		left join l on pd.ClientEncounter = l.ClientEncounter and pd.Date between convert(date,l.LOAStart) and convert(date,l.LOAEnd)
+)
+
+select	mrn, clientencounter, a.Location, Date, PatientDays, ALCStartDate, ALCEndDate, ALCDays, ALCLocation, ALCLocationCopied, b.majorprogram
+from	(	select	j.*
+					, row_number() over (partition by mrn, clientencounter, Location, Date, PatientDays order by ALCDays DESC, ALCStartDate ASC, ALCEndDate DESC) as rownumber
+			from	j) a
+		left join camhbi_dw_dc.[ETL].[DIM_Location_AU_Program] b on a.Location = b.Location
+where	a.rownumber = 1
