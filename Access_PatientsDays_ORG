@@ -1,0 +1,32 @@
+DECLARE @eop datetime, @level int
+set @level = $level$ 
+SET @eop = $dt$
+
+SELECT
+[MRN]
+,[ClientEncounter] as 'EncounterNumber'
+,[Unit/Location] as 'Location'
+,[Unit/Location] as 'LocationCopied'
+,[DateTime]
+,[TypeofActivity]
+,[TypeofActivityExcludingEDH]
+,[CensusSecondsOnUnit] as 'UnitLOSSeconds'
+,round([CensusSecondsOnUnit]/convert(float,60*60),1) as 'UnitLOSHrs'
+
+FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] p
+
+WHERE [Unit/Location] not in ('EDH', 'LOA', 'AWOL')
+AND
+	((
+		@level = 0 and [DateTime] BETWEEN DATEADD(year, -10, DATEADD(month, 
+                                                                                case datepart(month, @eop) % 3
+                                                                                when 1 then 3
+                                                                                when 2 then 2
+                                                                                when 0 then 1
+                                                                                end, @eop)) and  @eop
+    )
+	or 
+	(
+		@level = 1 and [DateTime] BETWEEN DATEADD(year, -1, @eop) and @eop 
+	))
+--[DateTime] between @sop and @eop
