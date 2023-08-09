@@ -1,0 +1,22 @@
+select 
+MRN
+,EncounterNumber
+,EncounterType
+,EncounterSubType
+,ARRIVE_DT_TM as 'ArriveDate'
+,isnull(AdmitDateTime, ARRIVE_DT_TM) as 'AdmitDate' --can include or omit nulls instead
+,isnull(AdmitLoc, LastLocation) as 'AdmitLocation' --can include or omit nulls instead
+,LastLocation
+,DischargeDate
+,DischargeDisposition
+,case when DischargeDate is not null then 1 else 0 end as 'Discharged'
+
+
+
+
+from [CAMHBI_DW_DC].[RA].[v_DataCutPatientDemographic]
+
+
+where EncounterType = 'Inpatient'
+and AdmitLoc not in ('DONOTSEND', '')
+and LastLocation not in ('DONOTSEND', 'EDH')
