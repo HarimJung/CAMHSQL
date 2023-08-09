@@ -12,7 +12,7 @@ Within Tableau Prep and Tableau, we handled Transfer To Institution (TTI) and Tr
 
 
 
-**<Long IPLOS Days_2>**
+**<Long IPLOSDays 2>**
 
 IF ISNULL ([Discharge Date])  THEN
     ROUND(DATEDIFF('minute', [Date], TODAY()) / (60*24), 1)
