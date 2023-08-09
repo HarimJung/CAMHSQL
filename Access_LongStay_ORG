@@ -1,0 +1,40 @@
+declare @sop datetime, @eop datetime
+set @eop = $dt$
+
+--get all admitted inpatients
+;with ip as (
+select 
+MRN
+,EncounterNumber
+,EncounterType
+,EncounterSubType
+,ARRIVE_DT_TM as 'ArriveDate'
+,isnull(AdmitDateTime, ARRIVE_DT_TM) as 'AdmitDate' --can include or omit nulls instead
+,isnull(AdmitLoc, LastLocation) as 'AdmitLocation' --can include or omit nulls instead
+,LastLocation
+,DischargeDate
+,DischargeDisposition
+,case when DischargeDate is not null then 1 else 0 end as 'Discharged'
+,case when DischargeDate < @eop then 1 else 0 end as 'DischargedAtEOP'
+
+from [CAMHBI_DW_DC].[RA].[v_DataCutPatientDemographic]
+
+where EncounterType = 'Inpatient'
+and AdmitLoc not in ('DONOTSEND', '')
+and LastLocation not in ('DONOTSEND', 'EDH')
+--and not (ARRIVE_DT_TM < '2016-04-01' and DischargeDate < '2016-04-01')
+)
+
+--calculate los at eop
+select
+ip.*
+,ip.AdmitLocation as 'AdmitLocationCopied'
+,ip.LastLocation as 'LastLocationCopied'
+,round(datediff(minute, ip.AdmitDate, isnull(ip.DischargeDate, @eop))/convert(float,60*24),1) as 'IPLOSDays'
+,case when DischargedAtEOP = 0 then round(datediff(minute, ip.AdmitDate, @eop)/convert(float,60*24),1) else null end as 'IPLOSDaysAtEOP'
+,case when DischargedAtEOP = 0 and round(datediff(minute, ip.AdmitDate, @eop)/convert(float,60*24),1) >= 365 then 1 else 0 end as 'LongStayEOP'
+,case when ip.LastLocation in ('FGUA', 'FGUB', 'FGUC', 'FGUD', 'FSUA', 'FSUB', 'FWSU', 'LAU', 'SOTU') then 1 else 0 end as 'Forensic'
+
+from ip
+
+where AdmitDate < @eop
