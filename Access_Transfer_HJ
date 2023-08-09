@@ -1,0 +1,37 @@
+SELECT
+    tto.ClientEncounter,
+    tto.MRN,
+    tto.DateTime,
+    tto.[Unit/Location] AS 'FromLocation',
+    tti.[Unit/Location] AS 'ToLocation',
+    tto.[Unit/Location] AS 'FromLocationCopied',
+    tti.[Unit/Location] AS 'ToLocationCopied',
+    tto.[Unit/Location] AS 'FromLocationNoHierarchy',
+    tti.[Unit/Location] AS 'ToLocationNoHierarchy'
+FROM
+    (
+    SELECT *
+    FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]
+    WHERE [TypeofActivityExcludingEDH] = 'TTO'
+    ) AS tto
+JOIN
+    (
+    SELECT *
+    FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]
+    WHERE [TypeofActivityExcludingEDH] = 'TTI'
+    ) AS tti
+ON tto.ClientEncounter = tti.ClientEncounter AND tto.DateTime = tti.DateTime
+LEFT JOIN (
+    SELECT
+        DISTINCT Building,
+        ReportableLocation,
+        ReportableLocDesc,
+        MajorProgram,
+        MajorDivision,
+        CASE SubProgram WHEN 'ED & InPatient Services' THEN 'ED & Inpatient Services' ELSE SubProgram END AS SubProgram
+    FROM CAMHBI_DW_CERNER.dsh.v_DIM_Location_AU_Program
+    WHERE (ReportableLocation IS NOT NULL AND SubProgram IS NOT NULL AND (ActiveInd = 1 OR Location = 'CMUD'))
+        OR ReportableLocation IN ('CHPD', 'AIM', 'FACT', 'CTDA', 'OPPH', 'FEPC', 'DETB', 'DENT', 'BIU', 'MAEI', 'CHBB', 'MAU', 'CHAR')
+) LOC ON tto.[Unit/Location] = LOC.ReportableLocation
+WHERE tto.[Unit/Location] NOT IN ('EDH', 'LOA', 'AWOL')
+    AND tti.[Unit/Location] NOT IN ('EDH', 'LOA', 'AWOL')
