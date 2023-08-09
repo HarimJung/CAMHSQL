@@ -1,0 +1,47 @@
+DECLARE @eop datetime, @level int
+SET @eop = $dt$
+SET  @level = $level$
+
+;with tti as (
+SELECT *
+  FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]
+  WHERE [TypeofActivityExcludingEDH] = 'TTI'
+  )
+
+, tto as (
+SELECT *
+  FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]
+  WHERE [TypeofActivityExcludingEDH] = 'TTO'
+  )
+
+SELECT
+tto.ClientEncounter
+,tto.MRN
+,tto.DateTime
+,tto.[Unit/Location] as 'FromLocation'
+,tti.[Unit/Location] as 'ToLocation'
+,tto.[Unit/Location] as 'FromLocationCopied'
+,tti.[Unit/Location] as 'ToLocationCopied'
+,tto.[Unit/Location] as 'FromLocationNoHierarchy'
+,tti.[Unit/Location] as 'ToLocationNoHierarchy'
+
+FROM tto 
+JOIN tti ON tto.ClientEncounter = tti.ClientEncounter AND tto.DateTime = tti.DateTime
+
+WHERE 
+tto.[Unit/Location] not in ('EDH', 'LOA', 'AWOL')
+AND tti.[Unit/Location] not in ('EDH', 'LOA', 'AWOL')
+AND 	((
+		@level = 0 AND tto.datetime BETWEEN DATEADD(year, -10, DATEADD(month, 
+                                                                                case datepart(month, @eop) % 3
+                                                                                when 1 then 3
+                                                                                when 2 then 2
+                                                                                when 0 then 1
+                                                                                end, @eop)) and  @eop
+    )
+	or 
+	(
+		@level = 1 AND tto.datetime BETWEEN DATEADD(year, -1, @eop) and @eop 
+	))
+
+-- tto.datetime between @sop and @eop
