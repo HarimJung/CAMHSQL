@@ -1,0 +1,96 @@
+SELECT
+    subq.ClientEncounter,
+    subq.Location,
+    subq.Location_for_div,
+    subq.admitdate,
+    ISNULL(subq.Tobacco_Numerator, 0) AS Tobacco_Numerator,
+    ISNULL(subq.Tobacco_Denominator, 0) AS Tobacco_Denominator,
+    subq.fiscal_year,
+    subq.fiscal_year_startdate,
+    subq.fiscal_year_enddate,
+    subq.fiscal_quarter,
+    subq.fiscal_quarter_startdate,
+    subq.fiscal_quarter_enddate,
+    subq.fiscal_month,
+    subq.month_startdate,
+	subq.month_enddate
+FROM
+(
+    SELECT
+        d.ClientEncounter,
+        d.[Unit/Location] AS Location,
+        d.[Unit/Location] AS Location_for_div,
+        d.[datetime] AS admitdate,
+        ISNULL(n.ncount, 0) AS Tobacco_Numerator,
+        ISNULL(d.dcount, 0) AS Tobacco_Denominator,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 
+			THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) - 1), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2)
+            ELSE RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2)
+        END AS fiscal_year,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) - 1 AS VARCHAR) + '0401' AS DATETIME)
+            ELSE CAST(CAST(YEAR(d.[datetime]) AS VARCHAR) + '0401' AS DATETIME)
+        END AS fiscal_year_startdate,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR) + '0331' AS DATETIME)
+            ELSE CAST(CAST(YEAR(d.[datetime]) + 1 AS VARCHAR) + '0331' AS DATETIME)
+        END AS fiscal_year_enddate,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) - 1), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '-Q4'
+            WHEN MONTH(d.[datetime]) >= 4 AND MONTH(d.[datetime]) <= 6 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2) + '-Q1'
+            WHEN MONTH(d.[datetime]) >= 7 AND MONTH(d.[datetime]) <= 9 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2) + '-Q2'
+            WHEN MONTH(d.[datetime]) >= 10 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2) + '-Q3'
+        END AS fiscal_quarter,
+		CASE 
+			WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0101' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 4 AND MONTH(d.[datetime]) <= 6 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0401' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 7 AND MONTH(d.[datetime]) <= 9 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0701' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 10 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'1001' AS datetime)
+		END AS fiscal_quarter_startdate,
+		CASE 
+			WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0331' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 4 AND MONTH(d.[datetime]) <= 6 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0630' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 7 AND MONTH(d.[datetime]) <= 9 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0930' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 10 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'1231' AS datetime)
+		END AS fiscal_quarter_enddate,
+		datename(m,d.[datetime]) + ' ' + cast(year(d.[datetime]) as varchar) as fiscal_month,
+		cast(cast(year(d.[datetime]) as varchar) + right('0' + cast(month(d.[datetime]) as varchar),2)+  '01' as datetime) as month_startdate, 
+		dateadd(d,-1,cast(cast(year(d.[datetime]) as varchar) + right('0' + cast((case when month(d.[datetime]) = 12 then 0 else month(d.[datetime]) end) +1 as varchar),2) + '01' as datetime)) as month_enddate
+    FROM
+(
+                             SELECT ClientEncounter,[Unit/Location],[DATEtime],1 as Dcount
+         FROM
+                              (
+             SELECT ClientEncounter,[Unit/Location] ,[DATEtime]
+             FROM ra.v_DataCutPatientHours
+             WHERE TypeofActivity='a'
+             AND [Unit/Location] NOT IN ('EAU','EDH','AWOL','LOA')
+                              )NonEDHEAU
+         UNION
+                             SELECT ClientEncounter,[Unit/Location],[DATEtime], 1 as Dcount
+        FROM
+                             (
+                                           select A.* from
+                                           (
+                                                          SELECT *,ROW_NUMBER() OVER (PARTITION BY CLIENTENCOUNTER  order by [dateTIME]) as RW
+                                                          FROM ra.v_DataCutPatientHours
+                                                          WHERE ClientEncounter  IN ( SELECT DISTINCT ClientEncounter  
+                                                                                                     FROM ra.v_DataCutPatientHours A
+                                                                                                     WHERE TypeofActivity='a'
+                                                                                                     AND [Unit/Location]  IN ('EAU','EDH','AWOL','LOA')
+                                                                                                                                                  )
+                                                          AND [Unit/Location] NOT IN ('EAU','EDH','AWOL','LOA')
+                                           ) a  WHERE A.RW=1
+                             )
+                             EDHEAU
+)d
+left outer join ra.v_DIM_Location_AU_Program loc on loc.Location=d.[Unit/Location]
+left outer JOIN
+              (            
+                             SELECT EncounterNumber,MIN(FORM_DT_TM) AS FORMTIME,1 as Ncount
+                             FROM RA.v_DCTobaccoUseScrn
+                             WHERE FORM_STATUS IN ('Auth (Verified)','Modified')
+                             GROUP BY ENCOUNTERNUMBER
+              )n ON d.CLIENTENCOUNTER=n.ENCOUNTERNUMBER AND  DATEDIFF(second, d.[DATETIME], n.FORMTIME) <= 86400
+)  AS subq
