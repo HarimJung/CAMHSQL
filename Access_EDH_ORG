@@ -1,0 +1,27 @@
+SELECT  [EncounterNumber]
+      ,[MRN]
+      ,[ARRIVE_DT_TM]
+      ,[AdmitDateTime]
+      ,[DischargeDate]
+      ,[LocationAfterEAU]
+      ,[AdmitLoc]
+      ,[LastLocation]
+      ,[EAU_End_Time]
+      ,[EDH_End_Time]
+         ,e.EndDate
+         ,round(datediff(minute, AdmitDateTime, e.EndDate)/convert(float,60),1) as 'EDH_EAU_LOSHrs'
+         ,isnull(LocationAfterEAU, AdmitLoc) as 'IPAdmitLocation'
+		 ,isnull(LocationAfterEAU, AdmitLoc) as 'IPAdmitLocationCopied'
+  FROM [CAMHBI_DW_CERNER].[dsh].[v_Dashboard_ED]
+
+    --get the latest date out of EAU end date and EDH end date
+  CROSS APPLY (SELECT MAX(n) as EndDate FROM (VALUES ([EAU_End_Time]), (EDH_End_Time)) AS e(n)) e
+
+  where EncounterType = 'Inpatient'
+  and EncounterSubType = 'Admitted through Emergency'
+  and (AdmitLoc = 'EAU' or EDH_End_Time <> '1900-01-01')                   -- client must have been admitted via EDH or EAU
+  and LastLocation not in ('ED', 'EDH', 'EAU', 'EOU')                              -- client must have been admitted to another IP unit
+  and not (EAU_End_Time = '1900-01-01' and EDH_End_Time = '1900-01-01')    -- client must have completed stay in EDH or EAU
+  
+  and round(datediff(minute, AdmitDateTime, e.EndDate)/convert(float,60),1) < 200 --exclude outliers
+  and round(datediff(minute, AdmitDateTime, e.EndDate)/convert(float,60),1) > 0 --exclude data quality issues with no EDH/EAU duration 
