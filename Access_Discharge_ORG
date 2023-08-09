@@ -1,0 +1,40 @@
+--declare date placeholders
+DECLARE @eop datetime, @level int
+SET @eop = $dt$
+SET @level = $level$
+
+SELECT
+MRN
+,EncounterNumber
+,EncounterType
+,EncounterSubType
+,ARRIVE_DT_TM as 'ArriveDate'
+,isnull(AdmitDateTime, ARRIVE_DT_TM) as 'AdmitDate' --can include or omit nulls instead
+,isnull(AdmitLoc, LastLocation) as 'AdmitLocation' --can include or omit nulls instead
+,LastLocation
+,LastLocation as 'LastLocationCopied'
+,DischargeDate
+,DischargeDisposition
+,case when DischargeDate is not null then 1 else 0 end as 'Discharged'
+,round(datediff(minute, AdmitDateTime, isnull(DischargeDate,getdate()))/convert(float,60*24),1) as 'IPLOSDays'
+
+FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientDemographic]
+
+WHERE EncounterType = 'Inpatient'
+AND AdmitLoc not in ('DONOTSEND', '')
+AND LastLocation not in ('DONOTSEND', 'EDH')
+--and not (ARRIVE_DT_TM < '2016-04-01' and DischargeDate < '2016-04-01')
+AND
+	((
+		@level = 0 and DischargeDate BETWEEN DATEADD(year, -10, DATEADD(month, 
+                                                                                case datepart(month, @eop) % 3
+                                                                                when 1 then 3
+                                                                                when 2 then 2
+                                                                                when 0 then 1
+                                                                                end, @eop)) and  @eop
+    )
+	or 
+	(
+		@level = 1 and DischargeDate BETWEEN DATEADD(year, -1, @eop) and @eop 
+	))
+-- DischargeDate between @sop and @eop
