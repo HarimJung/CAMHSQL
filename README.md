@@ -1,7 +1,7 @@
 # CAMHSQL
 CAMH SQL Check
 
-Primarily concerning the Access dataset:
+>_**Primarily concerning the Access dataset:**_
 
 1. In contrast to Dundas BI, there are distinctions in the Transfer In and Transfer Out aspects.
 Within Tableau Prep and Tableau, we handled Transfer To Institution (TTI) and Transfer To Other (TTO) as distinct entities.
