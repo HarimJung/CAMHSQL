@@ -1,0 +1,329 @@
+Select ActiveInd 
+,  NULL as admitdate
+,  AU
+,  Building
+,  NULL as ClientEncounter
+,  dischargedate
+,  dischargedate as dischargedate_day
+,  DischargeDisposition
+,  encounternumber
+,  encountersubtype
+,  encountertype
+,  fiscal_month
+,  fiscal_quarter
+,  fiscal_quarter_enddate
+,  fiscal_quarter_startdate
+,  fiscal_year
+,  fiscal_year_enddate
+,  fiscal_year_startdate
+,  lastloc_for_div
+,  lastlocation
+,  Location
+,  locdesc
+,  MajorDivision
+,  MajorProgram
+,  MajorProgramCode
+,  month_enddate
+,  month_startdate
+,  MRN
+,  pods_first_performed_dt
+,  readm30_date
+,  readm30_encounternumber
+,  readm30_lastlocation
+,  readm7_date
+,  readm7_encounternumber
+,  readm7_lastlocation
+,  SubDivision
+,  SubProgram
+,  SubProgramCode
+,  PODS_denominator
+,  PODS_numerator
+,  readm30_denominator
+,  readm30_numerator
+,  readm7_denominator
+,  readm7_numerator
+,  NULL as Tobacco_Denominator
+,  NULL as Tobacco_Numerator
+,  case when dateadd(d, 30, month_enddate) > getdate() then 1 else 0 end as readm30_ismonthopen
+,  case when dateadd(d, 30, fiscal_quarter_enddate) > getdate() then 1 else 0 end as readm30_isqtropen
+,  case when dateadd(d, 30, fiscal_year_enddate) > getdate() then 1 else 0 end as readm30_isyropen
+,  case when dateadd(d, 7, month_enddate) > getdate() then 1 else 0 end as readm7_ismonthopen
+,  case when dateadd(d, 7, fiscal_quarter_enddate) > getdate() then 1 else 0 end as readm7_isqtropen
+,  case when dateadd(d, 7, fiscal_year_enddate) > getdate() then 1 else 0 end as readm7_isyropen
+,  'Discharge' as base_source
+from 
+(
+	select pd.MRN, pd.encountertype, pd.encountersubtype, pd.encounternumber, pd.lastlocation, pd.lastlocation as lastloc_for_div, loc.Location, loc.locdesc, loc.MajorProgram, loc.MajorProgramCode,
+		loc.SubProgram, loc.SubProgramCode, loc.MajorDivision, loc.SubDivision, loc.Building, loc.ActiveInd, loc.AU,
+		case when month(pd.dischargedate) <= 3 
+			then right(convert(varchar,year(pd.dischargedate)-1),2)+'/'+ right(convert(varchar,year(pd.dischargedate)),2)  
+			else right(convert(varchar,year(pd.dischargedate)),2)+'/'+ right(convert(varchar,year(pd.dischargedate)+1),2) end as fiscal_year,
+		case when month(pd.dischargedate) <= 3 
+			then cast(cast(year(pd.dischargedate)-1 as varchar) +'0401' as datetime) 
+			else cast(cast(year(pd.dischargedate) as varchar) +'0401' as datetime)  end as fiscal_year_startdate,
+		case when month(pd.dischargedate) <= 3 
+			then cast(cast(year(pd.dischargedate) as varchar) +'0331' as datetime) 
+			else cast(cast(year(pd.dischargedate)+1 as varchar) +'0331' as datetime)  end as fiscal_year_enddate, 
+		case when month(pd.dischargedate) <= 3 then right(convert(varchar,year(pd.dischargedate)-1),2)+'/'+ right(convert(varchar,year(pd.dischargedate)),2) +'-Q4'
+			 when month(pd.dischargedate) >= 4 and month(pd.dischargedate) <= 6 then right(convert(varchar,year(pd.dischargedate)),2)+'/'+ right(convert(varchar,year(pd.dischargedate)+1),2) + '-Q1'
+			 when month(pd.dischargedate) >= 7 and month(pd.dischargedate) <= 9 then right(convert(varchar,year(pd.dischargedate)),2)+'/'+ right(convert(varchar,year(pd.dischargedate)+1),2) + '-Q2'
+			 when month(pd.dischargedate) >= 10 then right(convert(varchar,year(pd.dischargedate)),2)+'/'+ right(convert(varchar,year(pd.dischargedate)+1),2) + '-Q3'
+			 end as fiscal_quarter,
+		case when month(pd.dischargedate) <= 3 then cast(cast(year(pd.dischargedate) as varchar(4))+'0101' as datetime)
+			 when month(pd.dischargedate) >= 4 and month(pd.dischargedate) <= 6 then cast(cast(year(pd.dischargedate) as varchar(4))+'0401' as datetime)
+			 when month(pd.dischargedate) >= 7 and month(pd.dischargedate) <= 9 then cast(cast(year(pd.dischargedate) as varchar(4))+'0701' as datetime)
+			 when month(pd.dischargedate) >= 10 then cast(cast(year(pd.dischargedate) as varchar(4))+'1001' as datetime)
+			 end as fiscal_quarter_startdate,	 
+		case when month(pd.dischargedate) <= 3 then cast(cast(year(pd.dischargedate) as varchar(4))+'0331' as datetime)
+			 when month(pd.dischargedate) >= 4 and month(pd.dischargedate) <= 6 then cast(cast(year(pd.dischargedate) as varchar(4))+'0630' as datetime)
+			 when month(pd.dischargedate) >= 7 and month(pd.dischargedate) <= 9 then cast(cast(year(pd.dischargedate) as varchar(4))+'0930' as datetime)
+			 when month(pd.dischargedate) >= 10 then cast(cast(year(pd.dischargedate) as varchar(4))+'1231' as datetime)
+			 end as fiscal_quarter_enddate,
+		datename(m,pd.dischargedate) + ' ' + cast(year(pd.dischargedate) as varchar) as fiscal_month,
+		cast(cast(year(pd.dischargedate) as varchar) + right('0' + cast(month(pd.dischargedate) as varchar),2)+  '01' as datetime) as month_startdate, 
+		dateadd(d,-1,cast(cast(year(pd.dischargedate) as varchar) + right('0' + cast((case when month(pd.dischargedate) = 12 then 0 else month(pd.dischargedate) end) +1 as varchar),2) + '01' as datetime)) as month_enddate, 
+		pd.dischargedate, pd.DischargeDisposition,
+		pods.FirstPODS as pods_first_performed_dt, coalesce(pods.DischargeCnt,0) as PODS_denominator, coalesce(pods.PODSCnt,0) as PODS_numerator,
+		coalesce(readm30.readm_denominator,0) as readm30_denominator, coalesce(readm30.readm_numerator,0) as readm30_numerator, readm30.readm_encnumber as readm30_encounternumber, 
+		readm30.readmission_date as readm30_date, readm30.readmlocn as readm30_lastlocation,
+		coalesce(readm7.readm_denominator,0) as readm7_denominator, coalesce(readm7.readm_numerator,0) as readm7_numerator, readm7.readm_encnumber as readm7_encounternumber, 
+		readm7.readmission_date as readm7_date, readm7.readmlocn  as readm7_lastlocation
+	from RA.v_DataCutPatientDemographic pd
+	inner join [RA].[v_DIM_Location_AU_Program] loc on pd.LastLocation = loc.Location
+	left outer join 
+		(
+			select ip.MRN,ip.EncounterNumber,ip.DischargeDate,p.FirstPODS
+			,ip.LastLocation as 'Location',isnull(ip.DischargeCnt,0) as DischargeCnt,isnull(p.PODSCnt,0) as PODSCnt
+			from 
+			(
+				SELECT MRN,[EncounterNumber],[DischargeDate],[LastLocation],1 as DischargeCnt
+				  FROM [RA].[v_DataCutPatientDemographic]
+				  where EncounterType = 'inpatient'
+				  and DischargeDate is not null
+				  and DischargeDisposition = 'Ready for Discharge'
+				  and LastLocation not in ('EDH', 'ED','EAU')
+				  and dischargedate >= '2016-01-01'
+			)ip left outer join 
+			(
+				SELECT distinct	MRN, EncounterNumber, min(performed_dt_tm) as FirstPODS,1 as PODSCnt
+					FROM [RA].[v_DCPODS]
+					where EVENT_TITLE_TEXT like '%Patient-Oriented Discharge%'
+					and RESULT_STATUS in ('Auth (Verified)', 'Modified')
+					and ENTRY_MODE = 'Dynamic Documentation'
+					group by MRN,EncounterNumber
+			)p
+			on ip.MRN = p.MRN
+			and ip.EncounterNumber = p.EncounterNumber
+		)pods on pd.MRN = pods.MRN and pd.EncounterNumber = pods.EncounterNumber 
+
+
+	left outer join 
+
+
+		(select pdsub.mrn, pdsub.encountertype, pdsub.encountersubtype, pdsub.encounternumber, pdsub.dischargedate, pdsub.lastlocation, pdsub.DischargeDisposition,
+				readm.AdmitDateTime as newdmitdate, row_number() over(partition by pdsub.encounternumber order by coalesce(readm.admitdatetime,'1/1/1900')) as readmission_order,
+				1 as readm_denominator, coalesce(readm.is_readm,0) as readm_numerator, readm.encounternumber as readm_encnumber, readm.lastlocation as readmlocn,
+				case when datediff(d,pdsub.dischargedate, readm.admitdatetime) < 31 then readm.admitdatetime end as readmission_date
+			from RA.v_DataCutPatientDemographic pdsub
+			left outer join	
+					(select *, 1 as is_readm
+						from RA.v_DataCutPatientDemographic 
+						where encountertype = 'Inpatient'
+							and admitloc not in ('LOA','AWOL','DONOTSEND','')
+							AND admitloc is not null
+							AND lastlocation not in ('LOA','AWOL','DONOTSEND','EDH', 'ED')
+					)readm
+					on pdsub.mrn = readm.mrn
+					and pdsub.DischargeDate < readm.admitdatetime 
+					and datediff(d,pdsub.dischargedate, readm.admitdatetime) < 31
+			where pdsub.dischargedate >= '20160101'
+				and pdsub.dischargedate is not null 
+				and pdsub.encountertype = 'Inpatient'
+				and pdsub.admitloc not in ('LOA','AWOL','DONOTSEND','')
+				AND pdsub.admitloc is not null
+				AND pdsub.lastlocation not in ('LOA','AWOL','DONOTSEND','EDH', 'ED')
+				AND pdsub.DischargeDisposition = 'Ready for Discharge'
+		)readm30 on pd.encounternumber = readm30.encounternumber 
+					and readm30.readmission_order = 1
+
+
+	left outer join 
+
+
+		(select pdsub.mrn, pdsub.encountertype, pdsub.encountersubtype, pdsub.encounternumber, pdsub.dischargedate, pdsub.lastlocation, pdsub.DischargeDisposition,
+			readm.AdmitDateTime as newdmitdate, row_number() over(partition by pdsub.encounternumber order by coalesce(readm.admitdatetime,'1/1/1900')) as readmission_order,
+			1 as readm_denominator, coalesce(readm.is_readm,0) as readm_numerator, readm.encounternumber as readm_encnumber, readm.lastlocation as readmlocn,
+			case when datediff(d,pdsub.dischargedate, readm.admitdatetime) < 31 then readm.admitdatetime end as readmission_date 
+		from RA.v_DataCutPatientDemographic pdsub
+		left outer join	
+				(select *, 1 as is_readm
+					from RA.v_DataCutPatientDemographic 
+					where encountertype = 'Inpatient'
+						and admitloc not in ('LOA','AWOL','DONOTSEND','')
+						AND admitloc is not null
+						AND lastlocation not in ('LOA','AWOL','DONOTSEND','EDH', 'ED')
+				)readm
+				on pdsub.mrn = readm.mrn
+				and pdsub.DischargeDate < readm.admitdatetime 
+				and datediff(d,pdsub.dischargedate, readm.admitdatetime) < 8
+		where pdsub.dischargedate >= '20160101'
+				and pdsub.dischargedate is not null 
+				and pdsub.encountertype = 'Inpatient'
+				and pdsub.admitloc not in ('LOA','AWOL','DONOTSEND','')
+				AND pdsub.admitloc is not null
+				AND pdsub.lastlocation not in ('LOA','AWOL','DONOTSEND','EDH', 'ED')
+				AND pdsub.DischargeDisposition = 'Ready for Discharge'
+		)readm7	on pd.encounternumber = readm7.encounternumber 
+				and readm7.readmission_order = 1
+	where pd.dischargedate >= '20160101'
+	and pd.dischargedate is not null 
+	and pd.encountertype = 'Inpatient'
+	and pd.admitloc not in ('LOA','AWOL','DONOTSEND','')
+	AND pd.admitloc is not null
+	AND pd.lastlocation not in ('LOA','AWOL','DONOTSEND','EDH', 'ED')
+)sub
+UNION
+SELECT
+	   subq.ActiveInd 
+	,  subq.admitdate
+	,  subq.AU
+	,  subq.Building
+	,  subq.ClientEncounter
+	,  null as dischargedate
+	,  null as dischargedate_day
+	,  null as DischargeDisposition
+	,  null as encounternumber
+	,  null as encountersubtype
+	,  null as encountertype
+	,  subq.fiscal_month
+	,  subq.fiscal_quarter
+	,  subq.fiscal_quarter_enddate
+	,  subq.fiscal_quarter_startdate
+	,  subq.fiscal_year
+	,  subq.fiscal_year_enddate
+	,  subq.fiscal_year_startdate
+	,  null as lastloc_for_div
+	,  null as lastlocation
+	,  subq.Location
+	,  subq.locdesc
+	,  subq.MajorDivision
+	,  subq.MajorProgram
+	,  subq.MajorProgramCode
+	,  subq.month_enddate
+	,  subq.month_startdate
+	,  null as MRN
+	,  null as pods_first_performed_dt
+	,  null as readm30_date
+	,  null as readm30_encounternumber
+	,  null as readm30_lastlocation
+	,  null as readm7_date
+	,  null as readm7_encounternumber
+	,  null as readm7_lastlocation
+	,  null as SubDivision
+	,  null as SubProgram
+	,  null as SubProgramCode
+	,  null as PODS_denominator
+	,  null as PODS_numerator
+	,  null as readm30_denominator
+	,  null as readm30_ismonthopen
+	,  null as readm30_isqtropen
+	,  null as readm30_isyropen
+	,  null as readm30_numerator
+	,  null as readm7_denominator
+	,  null as readm7_ismonthopen
+	,  null as readm7_isqtropen
+	,  null as readm7_isyropen
+	,  null as readm7_numerator
+	,  ISNULL(subq.Tobacco_Denominator, 0) AS Tobacco_Denominator
+	,  ISNULL(subq.Tobacco_Numerator, 0) AS Tobacco_Numerator
+	,  'Tobacco' as base_source
+FROM
+(
+    SELECT
+        d.ClientEncounter,
+        d.[Unit/Location] AS Location_for_div,
+        d.[datetime] AS admitdate,
+        ISNULL(n.ncount, 0) AS Tobacco_Numerator,
+        ISNULL(d.dcount, 0) AS Tobacco_Denominator,
+		loc.Location, 
+		loc.locdesc, 
+		loc.MajorProgram, 
+		loc.MajorProgramCode,
+		loc.SubProgram, 
+		loc.SubProgramCode, 
+		loc.MajorDivision, 
+		loc.SubDivision, 
+		loc.Building, 
+		loc.ActiveInd, 
+		loc.AU,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 
+			THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) - 1), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2)
+            ELSE RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2)
+        END AS fiscal_year,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) - 1 AS VARCHAR) + '0401' AS DATETIME)
+            ELSE CAST(CAST(YEAR(d.[datetime]) AS VARCHAR) + '0401' AS DATETIME)
+        END AS fiscal_year_startdate,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR) + '0331' AS DATETIME)
+            ELSE CAST(CAST(YEAR(d.[datetime]) + 1 AS VARCHAR) + '0331' AS DATETIME)
+        END AS fiscal_year_enddate,
+        CASE
+            WHEN MONTH(d.[datetime]) <= 3 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) - 1), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '-Q4'
+            WHEN MONTH(d.[datetime]) >= 4 AND MONTH(d.[datetime]) <= 6 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2) + '-Q1'
+            WHEN MONTH(d.[datetime]) >= 7 AND MONTH(d.[datetime]) <= 9 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2) + '-Q2'
+            WHEN MONTH(d.[datetime]) >= 10 THEN RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime])), 2) + '/' + RIGHT(CONVERT(VARCHAR, YEAR(d.[datetime]) + 1), 2) + '-Q3'
+        END AS fiscal_quarter,
+		CASE 
+			WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0101' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 4 AND MONTH(d.[datetime]) <= 6 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0401' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 7 AND MONTH(d.[datetime]) <= 9 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0701' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 10 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'1001' AS datetime)
+		END AS fiscal_quarter_startdate,
+		CASE 
+			WHEN MONTH(d.[datetime]) <= 3 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0331' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 4 AND MONTH(d.[datetime]) <= 6 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0630' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 7 AND MONTH(d.[datetime]) <= 9 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'0930' AS datetime)
+			WHEN MONTH(d.[datetime]) >= 10 THEN CAST(CAST(YEAR(d.[datetime]) AS VARCHAR(4))+'1231' AS datetime)
+		END AS fiscal_quarter_enddate,
+		datename(m,d.[datetime]) + ' ' + cast(year(d.[datetime]) as varchar) as fiscal_month,
+		cast(cast(year(d.[datetime]) as varchar) + right('0' + cast(month(d.[datetime]) as varchar),2)+  '01' as datetime) as month_startdate, 
+		dateadd(d,-1,cast(cast(year(d.[datetime]) as varchar) + right('0' + cast((case when month(d.[datetime]) = 12 then 0 else month(d.[datetime]) end) +1 as varchar),2) + '01' as datetime)) as month_enddate
+    FROM
+(
+                             SELECT ClientEncounter,[Unit/Location],[DATEtime],1 as Dcount
+         FROM
+                              (
+             SELECT ClientEncounter,[Unit/Location] ,[DATEtime]
+             FROM ra.v_DataCutPatientHours
+             WHERE TypeofActivity='a'
+             AND [Unit/Location] NOT IN ('EAU','EDH','AWOL','LOA')
+                              )NonEDHEAU
+         UNION
+                             SELECT ClientEncounter,[Unit/Location],[DATEtime], 1 as Dcount
+        FROM
+                             (
+                                           select A.* from
+                                           (
+                                                          SELECT *,ROW_NUMBER() OVER (PARTITION BY CLIENTENCOUNTER  order by [dateTIME]) as RW
+                                                          FROM ra.v_DataCutPatientHours
+                                                          WHERE ClientEncounter  IN ( SELECT DISTINCT ClientEncounter  
+                                                                                                     FROM ra.v_DataCutPatientHours A
+                                                                                                     WHERE TypeofActivity='a'
+                                                                                                     AND [Unit/Location]  IN ('EAU','EDH','AWOL','LOA')
+                                                                                                                                                  )
+                                                          AND [Unit/Location] NOT IN ('EAU','EDH','AWOL','LOA')
+                                           ) a  WHERE A.RW=1
+                             )
+                             EDHEAU
+)d
+left outer join ra.v_DIM_Location_AU_Program loc on loc.Location=d.[Unit/Location]
+left outer JOIN
+              (            
+                             SELECT EncounterNumber,MIN(FORM_DT_TM) AS FORMTIME,1 as Ncount
+                             FROM RA.v_DCTobaccoUseScrn
+                             WHERE FORM_STATUS IN ('Auth (Verified)','Modified')
+                             GROUP BY ENCOUNTERNUMBER
+              )n ON d.CLIENTENCOUNTER=n.ENCOUNTERNUMBER AND  DATEDIFF(second, d.[DATETIME], n.FORMTIME) <= 86400
+)  AS subq
