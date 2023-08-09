@@ -1,0 +1,36 @@
+SELECT  
+    [EncounterNumber],
+    [MRN],
+    [ARRIVE_DT_TM],
+    [AdmitDateTime],
+    [DischargeDate],
+    [LocationAfterEAU],
+    [AdmitLoc],
+    [LastLocation],
+    [EAU_End_Time],
+    [EDH_End_Time],
+    e.EndDate,
+    ROUND(DATEDIFF(MINUTE, AdmitDateTime, e.EndDate)/CONVERT(FLOAT, 60), 1) AS 'EDH_EAU_LOSHrs',
+    ISNULL(LocationAfterEAU, AdmitLoc) AS 'IPAdmitLocation',
+    ISNULL(LocationAfterEAU, AdmitLoc) AS 'IPAdmitLocationCopied'
+FROM [CAMHBI_DW_CERNER].[dsh].[v_Dashboard_ED]
+CROSS APPLY (SELECT MAX(n) AS EndDate FROM (VALUES ([EAU_End_Time]), (EDH_End_Time)) AS e(n)) e
+LEFT JOIN (
+    SELECT
+        DISTINCT Building,
+        ReportableLocation,
+        ReportableLocDesc,
+        MajorProgram,
+        MajorDivision,
+        CASE SubProgram WHEN 'ED & InPatient Services' THEN 'ED & Inpatient Services' ELSE SubProgram END AS SubProgram
+    FROM CAMHBI_DW_CERNER.dsh.v_DIM_Location_AU_Program
+    WHERE (ReportableLocation IS NOT NULL AND SubProgram IS NOT NULL AND (ActiveInd = 1 OR Location = 'CMUD'))
+        OR ReportableLocation IN ('CHPD', 'AIM', 'FACT', 'CTDA', 'OPPH', 'FEPC', 'DETB', 'DENT', 'BIU', 'MAEI', 'CHBB', 'MAU', 'CHAR')
+) LOC ON ISNULL(LocationAfterEAU, AdmitLoc) = LOC.ReportableLocation
+WHERE EncounterType = 'Inpatient'
+    AND EncounterSubType = 'Admitted through Emergency'
+    AND (AdmitLoc = 'EAU' OR EDH_End_Time <> '1900-01-01')
+    AND LastLocation NOT IN ('ED', 'EDH', 'EAU', 'EOU')
+    AND NOT (EAU_End_Time = '1900-01-01' AND EDH_End_Time = '1900-01-01')
+    AND ROUND(DATEDIFF(MINUTE, AdmitDateTime, e.EndDate)/CONVERT(FLOAT, 60), 1) < 200
+    AND ROUND(DATEDIFF(MINUTE, AdmitDateTime, e.EndDate)/CONVERT(FLOAT, 60), 1) > 0
