@@ -1,0 +1,367 @@
+SELECT distinct pdh.*
+    , alca.EncounterNumber
+    , alca.ALCStartDate
+    , alca.DischargeDate
+    , alca.Discontinue_DateTime
+    , alca.Soft_Stop_DateTime
+    , alca.order_id
+    , l.OrigLocation
+    --, case when pdh.Date between alc.ALCStartDate and alc.ALCEndDate then pdh.PatientDays else 0 end as 'ALCDays'
+    , case when pdh.Location in ('AWOL', 'LOA') then l.ALCLocation else pdh.Location end as 'ALCLocation'
+    , case when pdh.Location in ('AWOL', 'LOA') then l.ALCLocation else pdh.Location end as 'ALCLocationCopied'
+    , LOC.Building
+    , LOC.MajorProgram
+    , LOC.SubProgram
+    , LOC.ReportableLocation
+    , LOC.ReportableLocDesc
+    , LOC.LocDesc
+    , LOC.MajorDivision
+FROM (
+SELECT pd.*
+    ,1 AS 'PatientDays'
+FROM (
+SELECT	[MRN]
+        ,[ClientEncounter]
+        ,[Unit/Location] as 'Location'
+        ,[Date]
+        ,ROW_NUMBER() OVER (PARTITION BY MRN, ClientEncounter, [Date] ORDER BY sum([CensusSecondsOnUnit]) DESC) AS RN
+FROM 
+(
+SELECT	aph1.ClientEncounter, aph1.MRN, CASE aph1.[Unit/Location] WHEN 'LOA' THEN bph3.LastLocation WHEN 'AWOL' THEN bph3.LastLocation ELSE aph1.[Unit/Location] END AS [Unit/Location]
+		, aph1.LocationDescription, aph1.Metric, aph1.DATE, aph1.Time, aph1.DateTime, aph1.TypeofActivity, aph1.CensusSecondsOnUnit
+		, aph1.DischargedOnAdmitDay, aph1.TypeofActivityExcludingEDH, aph1.EDHToInpatientSameDayTransfer
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+	) aph1
+	LEFT JOIN (
+			select ph2a.*
+    , COALESCE(ph2b.RowRk - 1, 99999999) as MaxRowRk
+FROM (
+select ph1.*
+    , ROW_NUMBER() OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY	RowRk) AS LocRk
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+) ph1
+WHERE	TypeofActivity = 'TTI' OR TypeofActivity = 'A'
+) ph2a
+LEFT JOIN 
+(
+select ph1.*
+    , ROW_NUMBER() OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY	RowRk) AS LocRk
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+) ph1
+WHERE	TypeofActivity = 'TTI' OR TypeofActivity = 'A'
+) ph2b on ph2a.ClientEncounter = ph2b.ClientEncounter and ph2a.LocRk = ph2b.LocRk-1
+				) bph3 on	aph1.ClientEncounter = bph3.ClientEncounter
+								and aph1.RowRk >= bph3.RowRk
+								and aph1.RowRk <= bph3.MaxRowRk
+) ph
+where		[Unit/Location] not in ('ED', 'EDH')
+			and TypeofActivity <> 'D' --discharge date is excluded from patient days count
+group by	MRN
+			,ClientEncounter
+			,[Unit/Location]
+			,[Date]
+) pd
+where RN = 1 and [Date] > '2015/12/31'
+) pdh
+LEFT JOIN (
+SELECT	alc.*
+FROM (	
+SELECT	
+      a.MRN
+    , a.EncounterNumber
+    , a.[ALC_Designation_Date]
+    , d.DischargeDate
+    , a.[ALC_Designation_Date] as 'ALCStartDate'
+    , a.[Discontinue_DateTime]
+    , a.[Soft_Stop_DateTime]
+    , a.order_id 
+    , ROW_NUMBER() OVER (PARTITION BY a.EncounterNumber, CONVERT(DATE, a.ALC_Designation_Date)  ORDER BY CASE WHEN a.Discontinue_DateTime IS NOT NULL THEN 1 ELSE 2 END) AS RN
+FROM	[CAMHBI_DW_DC].[RA].[v_DatacutsALC] a
+    join [CAMHBI_DW_DC].[RA].[v_DataCutPatientDemographic] d on d.EncounterNumber = a.EncounterNumber and (a.ALC_Designation_Date >= d.AdmitDateTime OR d.AdmitDateTime IS NULL)
+ WHERE	ALC = 'Alternate Level of Care'
+    and [Void_Date_DateTime] is null
+    and [CAMH_ALC_Discontinue_Reason] <> 'Data Entry Error'
+    and original_order_datetime > '2015/12/31'
+    ) alc
+WHERE RN = 1
+) alca
+    on pdh.ClientEncounter = alca.EncounterNumber
+LEFT JOIN (
+SELECT loa.MRN
+        , loa.ClientEncounter
+        , loa.[Unit/Location] AS 'OrigLocation'
+        , CASE WHEN loa.[Unit/Location] IN ( 'AWOL' ,'LOA' )
+                THEN LAG(loa.[Unit/Location], 1) OVER ( PARTITION BY loa.[MRN] ,loa.[ClientEncounter] ORDER BY loa.LOAStart ,loa.LOAEnd )
+                ELSE loa.[Unit/Location] END AS 'ALCLocation'
+        , loa.LOAStart
+        , CASE WHEN loa.LOAEnd IS NULL THEN phx.[DateTime]
+                ELSE loa.LOAEnd END AS 'LOAEnd'
+FROM 
+(
+SELECT MRN
+    , ClientEncounter
+    , [Unit/Location]
+    , [DateTime]
+    , [DateTime] AS 'LOAStart'
+    , [TypeofActivity]
+    , LEAD([DateTime], 1) OVER ( PARTITION BY [MRN] ,[ClientEncounter] ORDER BY [DateTime]
+                    ,CASE WHEN TypeofActivity = 'A' THEN 1
+                            WHEN TypeofActivity = 'TTO' THEN 2
+                            WHEN TypeofActivity = 'Y' THEN 3
+                            WHEN TypeofActivity = 'TTI' THEN 4
+                            WHEN TypeofActivity = 'D' THEN 5
+                            ELSE 6 END
+                    ) AS 'LOAEnd'
+FROM (
+SELECT	aph1.ClientEncounter, aph1.MRN, CASE aph1.[Unit/Location] WHEN 'LOA' THEN bph3.LastLocation WHEN 'AWOL' THEN bph3.LastLocation ELSE aph1.[Unit/Location] END AS [Unit/Location]
+		, aph1.LocationDescription, aph1.Metric, aph1.DATE, aph1.Time, aph1.DateTime, aph1.TypeofActivity, aph1.CensusSecondsOnUnit
+		, aph1.DischargedOnAdmitDay, aph1.TypeofActivityExcludingEDH, aph1.EDHToInpatientSameDayTransfer
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+	) aph1
+	LEFT JOIN (
+			select ph2a.*
+    , COALESCE(ph2b.RowRk - 1, 99999999) as MaxRowRk
+FROM (
+select ph1.*
+    , ROW_NUMBER() OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY	RowRk) AS LocRk
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+) ph1
+WHERE	TypeofActivity = 'TTI' OR TypeofActivity = 'A'
+) ph2a
+LEFT JOIN 
+(
+select ph1.*
+    , ROW_NUMBER() OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY	RowRk) AS LocRk
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+) ph1
+WHERE	TypeofActivity = 'TTI' OR TypeofActivity = 'A'
+) ph2b on ph2a.ClientEncounter = ph2b.ClientEncounter and ph2a.LocRk = ph2b.LocRk-1
+				) bph3 on	aph1.ClientEncounter = bph3.ClientEncounter
+								and aph1.RowRk >= bph3.RowRk
+								and aph1.RowRk <= bph3.MaxRowRk
+) ph
+WHERE [Unit/Location] IN ( 'AWOL' ,'LOA' )
+		AND [TypeofActivity] IN ( 'TTO' ,'TTI' )
+) loa
+LEFT JOIN (
+SELECT	aph1.ClientEncounter, aph1.MRN, CASE aph1.[Unit/Location] WHEN 'LOA' THEN bph3.LastLocation WHEN 'AWOL' THEN bph3.LastLocation ELSE aph1.[Unit/Location] END AS [Unit/Location]
+		, aph1.LocationDescription, aph1.Metric, aph1.DATE, aph1.Time, aph1.DateTime, aph1.TypeofActivity, aph1.CensusSecondsOnUnit
+		, aph1.DischargedOnAdmitDay, aph1.TypeofActivityExcludingEDH, aph1.EDHToInpatientSameDayTransfer
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+	) aph1
+	LEFT JOIN (
+			select ph2a.*
+    , COALESCE(ph2b.RowRk - 1, 99999999) as MaxRowRk
+FROM (
+select ph1.*
+    , ROW_NUMBER() OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY	RowRk) AS LocRk
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+) ph1
+WHERE	TypeofActivity = 'TTI' OR TypeofActivity = 'A'
+) ph2a
+LEFT JOIN 
+(
+select ph1.*
+    , ROW_NUMBER() OVER (PARTITION BY [MRN], [ClientEncounter] ORDER BY	RowRk) AS LocRk
+FROM (
+SELECT	a.*
+		, ROW_NUMBER() OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS RowRk
+		, LAG (a.[Unit/Location],1) OVER (PARTITION BY a.[MRN], a.[ClientEncounter] ORDER BY	a.[DateTime]
+		, case	when a.TypeofActivity = 'A' then 1
+				when a.TypeofActivity = 'TTO' then 2
+				when a.TypeofActivity = 'Y' then 3
+				when a.TypeofActivity = 'TTI' then 4
+				when a.TypeofActivity = 'D' then 5
+				else 6
+		  end) AS [LastLocation]
+FROM	[CAMHBI_DW_DC].[RA].[v_DataCutPatientHours] a
+		JOIN (SELECT DISTINCT ClientEncounter FROM [CAMHBI_DW_DC].[RA].[v_DataCutPatientHours]) b on a.ClientEncounter = b.ClientEncounter
+) ph1
+WHERE	TypeofActivity = 'TTI' OR TypeofActivity = 'A'
+) ph2b on ph2a.ClientEncounter = ph2b.ClientEncounter and ph2a.LocRk = ph2b.LocRk-1
+				) bph3 on	aph1.ClientEncounter = bph3.ClientEncounter
+								and aph1.RowRk >= bph3.RowRk
+								and aph1.RowRk <= bph3.MaxRowRk
+) phx ON phx.ClientEncounter = loa.ClientEncounter
+		AND phx.TypeOfActivity = 'D'
+	WHERE loa.TypeofActivity = 'TTI'
+) l
+    on pdh.ClientEncounter = l.ClientEncounter and pdh.Date between convert(date,l.LOAStart) and convert(date,l.LOAEnd)
+LEFT JOIN (
+    SELECT distinct
+	Building
+	, MajorProgram
+	, CASE SubProgram WHEN 'ED & InPatient Services' THEN 'ED & Inpatient Services' ELSE SubProgram END AS SubProgram
+	, Location 
+	, ReportableLocation
+	, ReportableLocDesc
+	, LocDesc
+	, LocationDisplay
+	, MajorDivision
+  FROM [CAMHBI_DW_DC].[RA].[v_DIM_Location_AU_Program]
+  where majorprogramcode is not null
+  and subprogramcode is not null
+and Building = 'Inpatient'
+and (ActiveInd = 1 OR Location = 'DDIU')
+) LOC ON pdh.Location = LOC.ReportableLocation
+WHERE pdh.Location NOT IN ('EDH', 'LOA', 'AWOL')
+		and pdh.Location IN ('WGFU','ACUA','PRT7','PRT5','PRT6','PRT8','CRTU','DDIU','EAU','CCC5','FGUA','FGUB','FGUC','FGUD','FSUA','FSUB','FWSU','GAUA','GAUB','CCC3','CCC4','LAU','CCC6','MWU','PICU','SOTU','CCC7','YTHU','PRT3')
